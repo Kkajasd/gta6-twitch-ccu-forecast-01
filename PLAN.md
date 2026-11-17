@@ -2,8 +2,9 @@
 
 Bounty: `gta6-twitch-ccu-forecast-01` ($250, deadline 2026-11-19 01:00 UTC).
 Entrant: @kaka-aja (make.fun) / Kkajasd (GitHub). Entry: `main.py` (Python 3.13
-stdlib only) in this directory. Built 2026-11-17, local only — no repo created,
-nothing submitted.
+stdlib only) in this directory. Built 2026-11-17, revised 2026-11-17
+(pooled sigma, for the `thinking_revised` check); repo exists, nothing
+submitted yet.
 
 ## What the program does
 
@@ -30,9 +31,12 @@ from them **at run time** — no hard-coded numbers from any single launch:
    4, fall back to the flat persistence forecast (the starter, byte-exact).
 3. Per forecast hour h, fit `log(y_h) = a_h + b_h * log(p1)` by least squares
    over the calibration curves (p1 = the case's hour-1 print). Quantiles are
-   `exp(a_h + b_h*log(p1) + z_tau * sigma_h)`, sigma_h = residual sd floored
-   at 0.20 and widened ×1.5 (small calibration set + GTA VI larger than any
-   curve in it).
+   `exp(a_h + b_h*log(p1) + z_tau * sigma)`, with one pooled sigma for all
+   hours: the RMS of the 23 per-hour residual sds, floored at 0.20 and
+   widened ×1.5 (small calibration set + GTA VI larger than any curve in
+   it). A single hour's residual sd comes from only a handful of curves,
+   so pooling stabilises the spread (revised 2026-11-17; was a per-hour
+   sd, which scored 0.1572 vs 0.1545 pooled on console LOO).
 
 Why the regression, not a fixed shape: across the calibration launches, a
 day's later hours grow **sub-linearly** with its first hour (corr(log p1,
@@ -49,12 +53,14 @@ print in, hours 2–24 scored. Calibration uses the other curves only.
 
 | Target set | Model (mean / median) | Flat baseline (mean / median) |
 |---|---|---|
-| Console-only clean, n=7 (GTA VI's stratum) | **0.1572 / 0.1415** | 0.3435 / 0.3087 |
-| All 37 comparables (context) | 0.6618 / 0.3164 | 0.9297 / 0.3248 |
+| Console-only clean, n=7 (GTA VI's stratum) | **0.1545 / 0.1398** | 0.3435 / 0.3087 |
+| All 37 comparables (context) | 0.6638 / 0.3303 | 0.9297 / 0.3248 |
 
-→ On GTA VI's stratum the model beats the flat house baseline by **54.2%**
-(mean and median). It beats flat on 6 of 7 console curves (only FINAL
-FANTASY VII REBIRTH is worse: 0.191 vs 0.173). Per-curve numbers in TESTS.md.
+→ On GTA VI's stratum the model beats the flat house baseline by **55.0%**
+(mean) and 54.7% (median). It beats flat on 6 of 7 console curves (only
+FINAL FANTASY VII REBIRTH is worse: 0.188 vs 0.173). Per-curve numbers in
+TESTS.md. (Before the 2026-11-17 pooled-sigma revision: 0.1572 / 0.1415,
+54.2%.)
 
 ## What was tried and rejected
 
@@ -71,6 +77,15 @@ FANTASY VII REBIRTH is worse: 0.191 vs 0.173). Per-curve numbers in TESTS.md.
   unshrunk slopes with sigma ×1.5, floor 0.20 are best or within noise of
   best (0.157 vs 0.156 at floor 0.25 — kept 0.20 as the more conservative
   width for an out-of-sample mega-launch).
+- **Pooled sigma** (ADOPTED 2026-11-17, revision for `thinking_revised`):
+  RMS of the 23 per-hour residual sds instead of one sd per hour:
+  console LOO 0.1545 vs 0.1572, better on 6/7 curves. Rejected
+  alongside it: LOO-residual sigma (0.1612 at ×1.0), Student-t z-values
+  df=5 (0.1568 at ×1.2), median-residual centre shift (0.1580), pooled
+  with floor 0.25 (0.1547) or widening ×1.8 (0.1574) — no further gain.
+  Note the brief's first candidate (per-hour sigma) was already the
+  shipped design; the improvement came from pooling it, the opposite
+  direction, because a 6-curve per-hour sd is noisy.
 
 ## Honest limitations
 
@@ -92,12 +107,12 @@ FANTASY VII REBIRTH is worse: 0.191 vs 0.173). Per-curve numbers in TESTS.md.
 
 ## Submission blockers (not done here)
 
-- No GitHub repo created (parent decision; note: Muse cannot create repos
-  via the GitHub App — the user must create the public repo on github.com,
-  then it can be pushed to).
-- No transcript bundle / submit run. The build session must be bundled with
-  the repo when submitting (`node cli/makefun.mjs bundle` + `check`).
-- Repo must be created after the competition opened (2026-11-17 06:00 UTC)
-  and must include `.makefun/owner.json` with the agent wallet unless the
-  repo owner is the account's GitHub login (Kkajasd — if the repo is under
-  Kkajasd, the file is not needed; confirm at submit time).
+- Repo now exists: `Kkajasd/gta6-twitch-ccu-forecast-01` (public, created
+  2026-11-17 via the PAT connector, commit 5039fccc). This revision
+  (pooled sigma + `.makefun/owner.json`) still needs to be pushed.
+- `.makefun/owner.json` added 2026-11-17 with the agent wallet
+  (9VYt4b7t3wPbbwvtCjx4dyY7RNVTa246ULJNwVimHhA9), satisfying the
+  `repo_owner` check.
+- No transcript bundle / submit run yet. The build + revision sessions
+  must be bundled with the repo when submitting
+  (`node cli/makefun.mjs bundle` + `check`).

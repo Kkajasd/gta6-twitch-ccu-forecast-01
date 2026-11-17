@@ -25,18 +25,20 @@ numbers for any one launch:
    first hour (across the calibration launches, log peak vs log hour-1
    correlates about -0.94 in ratio terms), so a fixed ratio-to-hour-1 shape
    systematically over-predicts big launches and under-predicts small ones.
-   The five quantiles are exp(a_h + b_h*log(p1) + z_tau * sigma_h), where
-   sigma_h is the residual standard deviation of the fit, floored at 0.20
-   and widened x1.5 to cover parameter uncertainty from the small
-   calibration set and the fact that GTA VI is a larger launch than any
-   curve in it.
+   The five quantiles are exp(a_h + b_h*log(p1) + z_tau * sigma), where
+   sigma is one pooled spread for all hours: the RMS of the 23 per-hour
+   residual standard deviations, floored at 0.20 and widened x1.5. A
+   single hour's residual sd comes from only a handful of curves, so it
+   is noisy; pooling stabilises it. The widening covers parameter
+   uncertainty from the small calibration set and the fact that GTA VI
+   is a larger launch than any curve in it.
 
 Validation (leave-one-out on the 7 console-only clean comparable curves,
 each scored against its own real release day; the 4 practice cases' own
 answers stay on make.fun's server, so they cannot be scored locally):
   flat persistence baseline : mean pinball loss 0.344, median 0.309
-  this forecaster           : mean pinball loss 0.157, median 0.142
-  i.e. about 54% lower mean loss than the flat house baseline on the
+  this forecaster           : mean pinball loss 0.154, median 0.140
+  i.e. about 55% lower mean loss than the flat house baseline on the
   launch stratum GTA VI belongs to. For reference, the house baseline's
   stated practice loss is 0.387 (competition.yaml). No claim is made about
   the house AI model forecast, which cannot be measured locally.
@@ -157,14 +159,36 @@ def flat_quantiles(p1: float, h: int) -> list[float | int]:
     return [round2(p1 * math.exp(z * FLAT_SIGMA * math.sqrt(h - 1))) for z in Z]
 
 
-def regression_quantiles(p1: float, h: int, curves: list[list[float]]) -> list[float | int]:
+def pooled_sigma(curves: list[list[float]]) -> float:
+    """One spread for all forecast hours: the RMS of the per-hour residual
+    standard deviations of the log-log fits, floored and widened.
+
+    A single hour's residual sd is estimated from only len(curves) points
+    (6 in leave-one-out, 11 in the final), so it is noisy; pooling the 23
+    per-hour variances stabilises the spread without assuming the hours
+    share one true variance. Leave-one-out on the console stratum:
+    0.1545 mean pinball vs 0.1572 for the per-hour sd.
+    """
+    xs = [math.log(c[0]) for c in curves]
+    variances = []
+    for h in range(2, 25):
+        ys = [math.log(c[h - 1]) for c in curves]
+        intercept, slope = ols(xs, ys)
+        residuals = [y - (intercept + slope * x) for x, y in zip(xs, ys)]
+        if len(residuals) > 1:
+            variances.append(statistics.pstdev(residuals) ** 2)
+    if not variances:
+        return 0.30
+    sd = math.sqrt(sum(variances) / len(variances))
+    return max(sd, SIGMA_FLOOR) * SIGMA_SCALE
+
+
+def regression_quantiles(p1: float, h: int, curves: list[list[float]], sigma: float) -> list[float | int]:
     """Quantiles of hour h from the log-log regression over `curves`."""
     log_p1 = math.log(max(p1, 1))
     xs = [math.log(c[0]) for c in curves]
     ys = [math.log(c[h - 1]) for c in curves]
     intercept, slope = ols(xs, ys)
-    residuals = [y - (intercept + slope * x) for x, y in zip(xs, ys)]
-    sigma = max(statistics.pstdev(residuals), SIGMA_FLOOR) * SIGMA_SCALE if len(residuals) > 1 else 0.30
     centre = intercept + slope * log_p1
     out = []
     for z in Z:
@@ -200,10 +224,11 @@ def forecast_case(case: dict, name: str) -> dict:
     use_regression = len(curves) >= MIN_CURVES
 
     rows = []
+    sigma = pooled_sigma(curves) if use_regression else 0.0
     for row in case["forecast"]:
         h = row["hour"]
         if use_regression:
-            q = regression_quantiles(p1, h, curves)
+            q = regression_quantiles(p1, h, curves, sigma)
         else:
             q = flat_quantiles(p1, h)
         rows.append({"hour": h, "q": q})
